@@ -386,6 +386,119 @@
     }
 
     /* ════════════════════════════════════════════════════════
+       HALL OF FAME — Client Win Log
+    ════════════════════════════════════════════════════════ */
+
+    /* Gold flash animation fired on every heatmap dot when a win is logged */
+    @keyframes goldFlash {
+      0%   { background: var(--sales); border-color: #ffd070; box-shadow: 0 0 14px 4px rgba(232,168,56,0.85), 0 0 30px 8px rgba(232,168,56,0.45); transform: scale(1.25); }
+      60%  { background: #ffd070;      border-color: #ffe29a; box-shadow: 0 0 22px 6px rgba(255,210,80,0.95), 0 0 44px 12px rgba(255,180,0,0.5); transform: scale(1.35); }
+      100% { background: var(--sales); border-color: #ffd070; box-shadow: 0 0 14px 4px rgba(232,168,56,0.85), 0 0 30px 8px rgba(232,168,56,0.45); transform: scale(1.25); }
+    }
+
+    .win-dot.flash {
+      animation: goldFlash 0.4s ease-in-out 5; /* 5 × 0.4s = 2 s total */
+    }
+
+    /* Card overrides for the gold-bordered Hall of Fame box */
+    .hall-of-fame-card {
+      border-color: rgba(232, 168, 56, 0.45);
+      box-shadow: 0 0 0 1px rgba(232,168,56,0.12), 0 4px 32px rgba(232,168,56,0.06);
+    }
+
+    .hall-of-fame-card h2 {
+      color: var(--sales);
+    }
+
+    /* Text area for the win note */
+    #win-input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(232,168,56,0.25);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.88rem;
+      padding: 12px 14px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    #win-input::placeholder { color: var(--muted); }
+    #win-input:focus { border-color: rgba(232,168,56,0.55); }
+
+    /* Log Win button */
+    #log-win-btn {
+      margin-top: 12px;
+      width: 100%;
+      padding: 11px;
+      background: rgba(232,168,56,0.15);
+      border: 1px solid rgba(232,168,56,0.4);
+      border-radius: 10px;
+      color: var(--sales);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.78rem;
+      font-weight: 400;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+
+    #log-win-btn:hover {
+      background: rgba(232,168,56,0.25);
+      box-shadow: 0 0 12px rgba(232,168,56,0.3);
+    }
+
+    /* Scrollable wins list */
+    .wins-list {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 260px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    /* Custom scrollbar */
+    .wins-list::-webkit-scrollbar { width: 4px; }
+    .wins-list::-webkit-scrollbar-track { background: transparent; }
+    .wins-list::-webkit-scrollbar-thumb { background: rgba(232,168,56,0.3); border-radius: 2px; }
+
+    /* Individual win entry */
+    .win-entry {
+      background: rgba(232,168,56,0.05);
+      border: 1px solid rgba(232,168,56,0.18);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+
+    .win-entry .win-note {
+      font-size: 0.88rem;
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .win-entry .win-timestamp {
+      margin-top: 6px;
+      font-size: 0.65rem;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+
+    /* Empty state message */
+    .wins-empty {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 16px 0;
+      font-style: italic;
+    }
+
+    /* ════════════════════════════════════════════════════════
        REVENUE TRACKER
     ════════════════════════════════════════════════════════ */
     .revenue-summary {
@@ -972,6 +1085,20 @@
     </div>
   </div>
 
+  <!-- ── Hall of Fame — Client Win Log ── -->
+  <div class="card hall-of-fame-card">
+    <h2>The Hall of Fame</h2>
+    <textarea
+      id="win-input"
+      rows="3"
+      placeholder="Describe your win — 'Closed the $5k deal with a Stoic reframe!'"
+    ></textarea>
+    <button id="log-win-btn">⚡ Log Win</button>
+    <div class="wins-list" id="wins-list">
+      <!-- Wins injected by JS -->
+    </div>
+  </div>
+
   <!-- ── Daily Momentum (Sales Energy Heatmap) ── -->
   <div class="momentum-bar">
     <span class="momentum-label">Daily Momentum</span>
@@ -1400,6 +1527,107 @@
       }
 
       render();
+    })();
+
+    // ════════════════════════════════════════════════════════
+    // HALL OF FAME — Client Win Log
+    // Stored as: 'winLog' → JSON array of { note, timestamp } objects
+    // Persists forever in localStorage (newest wins at the top)
+    // On each log: flashes all Sales Energy Heatmap dots gold for 2 s
+    // ════════════════════════════════════════════════════════
+    (function initWinLog() {
+      const STORAGE_KEY = 'winLog';
+      const listEl      = document.getElementById('wins-list');
+      const inputEl     = document.getElementById('win-input');
+      const btnEl       = document.getElementById('log-win-btn');
+
+      // ── Helpers ──────────────────────────────────────────
+      // Load the full win array from localStorage (newest first)
+      function loadWins() {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      }
+
+      // Save the array back to localStorage
+      function saveWins(wins) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(wins));
+      }
+
+      // Format a stored ISO timestamp into a readable string
+      function formatDate(isoString) {
+        const d = new Date(isoString);
+        const pad = n => String(n).padStart(2, '0');
+        const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}  ·  ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+
+      // ── Render ───────────────────────────────────────────
+      // Re-draws the entire list from the stored array
+      function renderWins() {
+        const wins = loadWins();
+        listEl.innerHTML = '';
+
+        if (wins.length === 0) {
+          // Show a friendly prompt when the list is empty
+          listEl.innerHTML = '<p class="wins-empty">Your victories will live here. Log your first win.</p>';
+          return;
+        }
+
+        wins.forEach(win => {
+          const entry = document.createElement('div');
+          entry.className = 'win-entry';
+          entry.innerHTML = `
+            <p class="win-note">${win.note}</p>
+            <p class="win-timestamp">${formatDate(win.timestamp)}</p>
+          `;
+          listEl.appendChild(entry);
+        });
+      }
+
+      // ── Heatmap Flash ────────────────────────────────────
+      // Fires the goldFlash CSS animation on every momentum dot
+      function flashHeatmap() {
+        const dots = document.querySelectorAll('.win-dot');
+        dots.forEach(dot => {
+          // Remove first (in case it's already running) then re-add
+          dot.classList.remove('flash');
+          // Void reflow forces the browser to restart the animation
+          void dot.offsetWidth;
+          dot.classList.add('flash');
+        });
+
+        // Clean up the class after the animation finishes (5 × 0.4 s = 2 s)
+        setTimeout(() => {
+          dots.forEach(dot => dot.classList.remove('flash'));
+        }, 2100);
+      }
+
+      // ── Log Win Handler ──────────────────────────────────
+      btnEl.addEventListener('click', () => {
+        const note = inputEl.value.trim();
+        if (!note) return; // do nothing if the textarea is empty
+
+        // Build the new win object with current timestamp
+        const newWin = {
+          note:      note,
+          timestamp: new Date().toISOString()
+        };
+
+        // Prepend to array so newest wins appear at the top
+        const wins = loadWins();
+        wins.unshift(newWin);
+        saveWins(wins);
+
+        // Update the UI
+        renderWins();
+        inputEl.value = ''; // clear the textarea
+
+        // Flash the Sales Energy Heatmap gold for 2 seconds
+        flashHeatmap();
+      });
+
+      // ── Init ─────────────────────────────────────────────
+      renderWins(); // show any previously stored wins on page load
     })();
 
     document.getElementById('reframe-btn').addEventListener('click', () => {
