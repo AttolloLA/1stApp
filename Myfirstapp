@@ -1,0 +1,15 @@
+Let's add a unique 'Mindset Reframer' tool to my dashboard.
+
+The UI: Add a text input box labeled 'Challenge of the Moment' and a button called 'Reframing...'.
+
+The Logic: When I type a sales struggle or a negative thought, use a JavaScript function to randomly pick one of three 'Stoic Sales Perspectives' to display:
+
+The Dichotomy of Control: 'You control the effort, not the outcome. Did you show up fully?'
+
+Amor Fati: 'This rejection is exactly what you need to sharpen your next pitch. Love the challenge.'
+
+Premeditatio Malorum: 'The worst happened (a "no"). You are still standing. Now, what is the next logical step?'
+
+Design: Make it look like a 'Zen Notepad' at the bottom of the screen.
+
+Visual Reward: When I click 'Reframing', make the text fade in slowly to give me a moment to breathe."
