@@ -1,0 +1,791 @@
+{
+  "name": "Story Architect — Telegram Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🚀 Story Architect — Setup Checklist\n\n**Replace these 3 placeholders before activating:**\n1. `YOUR_SUPABASE_URL` — in: Check Active Session, Check Rep, Prep Upsert, Save Story, Deduct Credits, Log Usage\n2. `YOUR_SUPABASE_KEY` — in: Check Active Session, Check Rep, Upsert Session, Save Story, Deduct Credits, Log Usage\n3. `YOUR_ANTHROPIC_KEY` — in: Call Claude\n\n**Also required:**\n- Run the SQL in `story_architect_setup.md` to create the `decrement_rep_credits` function\n- Ensure the 'Telegram API' credential exists in your n8n credentials\n\nSee `story_architect_setup.md` for full step-by-step instructions.",
+        "height": 300,
+        "width": 500,
+        "color": 4
+      },
+      "id": "aa000001-0000-0000-0000-000000000001",
+      "name": "Setup Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000002",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [560, 380],
+      "webhookId": "story-architect-telegram-hook",
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "YOUR_SUPABASE_URL/rest/v1/sessions",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "telegram_id",
+              "value": "=eq.{{ $json.message.from.id }}"
+            },
+            {
+              "name": "status",
+              "value": "eq.in_progress"
+            },
+            {
+              "name": "order",
+              "value": "created_at.desc"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000003",
+      "name": "Check Active Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const telegramId = $('Telegram Trigger').item.json.message.from.id;\nconst chatId = $('Telegram Trigger').item.json.message.chat.id;\nconst userMessage = $('Telegram Trigger').item.json.message.text || '';\nconst sessionResults = $('Check Active Session').all();\n\nlet route, sessionId, existingMessages, repId;\n\nif (sessionResults.length > 0 && sessionResults[0].json && sessionResults[0].json.id) {\n  // Active session exists → continue conversation\n  route = 'continue';\n  sessionId = sessionResults[0].json.id;\n  repId = sessionResults[0].json.rep_id;\n  existingMessages = sessionResults[0].json.messages || [];\n} else if (userMessage.trim() === '/story') {\n  // No session + /story command → start new\n  route = 'new_story';\n  sessionId = null;\n  existingMessages = [];\n} else {\n  // No session + other message → ignore silently\n  route = 'ignore';\n}\n\nreturn [{json: {route, telegramId, chatId, userMessage, sessionId, existingMessages, repId}}];"
+      },
+      "id": "aa000001-0000-0000-0000-000000000004",
+      "name": "Route Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 380]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "rules": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "cond-continue",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "continue",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "continue"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "cond-new-story",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "new_story",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "new_story"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "cond-ignore",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "ignore",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ignore"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000005",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [1220, 380]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "YOUR_SUPABASE_URL/rest/v1/reps",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "telegram_id",
+              "value": "={{ 'eq.' + $('Route Logic').item.json.telegramId }}"
+            },
+            {
+              "name": "select",
+              "value": "id,name,credits,manifesto_accepted"
+            },
+            {
+              "name": "limit",
+              "value": "1"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000006",
+      "name": "Check Rep",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1440, 540]
+    },
+    {
+      "parameters": {
+        "jsCode": "const repResults = $('Check Rep').all();\nconst data = $('Route Logic').item.json;\n\nif (!repResults.length || !repResults[0].json || !repResults[0].json.id) {\n  return [{json: {...data, valid: false, reason: 'not_registered'}}];\n}\n\nconst rep = repResults[0].json;\n\nif (!rep.manifesto_accepted) {\n  return [{json: {...data, valid: false, reason: 'manifesto_pending', repId: rep.id}}];\n}\n\nif (rep.credits <= 0) {\n  return [{json: {...data, valid: false, reason: 'no_credits', repId: rep.id}}];\n}\n\nreturn [{json: {...data, valid: true, repId: rep.id, repName: rep.name}}];"
+      },
+      "id": "aa000001-0000-0000-0000-000000000007",
+      "name": "Validate Rep",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1660, 540]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000008",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1880, 540]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reason === 'not_registered' ? \"You're not registered in RepFlowAI yet. Please contact your upline to get set up. 🙏\" : $json.reason === 'manifesto_pending' ? 'Before we begin, you need to accept the RepFlowAI Partnership Manifesto. Your upline will send you the link. 📋' : \"You've used all your story credits. 💳 Use /topup to add more.\" }}",
+        "additionalFields": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000009",
+      "name": "Send Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2100, 700],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data — works for both continue and new_story paths\n// Try to get from Validate Rep node first, fall back to Route Logic\nlet data;\ntry {\n  data = $('Validate Rep').item.json;\n} catch(e) {\n  data = $('Route Logic').item.json;\n}\n\nconst { telegramId, chatId, userMessage, sessionId, existingMessages, repId } = data;\n\n// Build messages array\nlet messages = Array.isArray(existingMessages) ? [...existingMessages] : [];\n\n// Add user message (first message triggers welcome)\nconst messageContent = messages.length === 0 ? 'START_STORY_SESSION' : userMessage;\nmessages.push({role: 'user', content: messageContent});\n\nreturn [{json: {\n  telegramId,\n  chatId,\n  userMessage,\n  sessionId,\n  repId,\n  messages,\n  isNewSession: sessionId === null\n}}];"
+      },
+      "id": "aa000001-0000-0000-0000-000000000010",
+      "name": "Build Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "YOUR_ANTHROPIC_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "claude-sonnet-4-20250514"
+            },
+            {
+              "name": "max_tokens",
+              "value": "=2000"
+            },
+            {
+              "name": "system",
+              "value": "You are the Story Architect — a warm, sharp, psychologically intelligent brand story coach embedded inside a private Telegram bot for Zinzino network marketing reps.\n\nYour job is to conduct a one-on-one interview with the rep, extract their real personal story, and then write their complete 3-piece Social Media Launch content pack — ready to use, personalised to their voice.\n\nThe 3 pieces you deliver at the end are:\n1. 📝 Day 3 — The Story Post (Facebook, ~250 words)\n2. 🎥 Day 5 — FB Live Bullet Outline (5–7 bullet points they read from during a live video)\n3. 📊 Day 6 — Self-Evaluation Post (Facebook, the 1–10 scoring post)\n\nYou write Day 3 using the combined P.U.L.L. + E.L.I.T.E. framework:\n- P.U.L.L.: Personal Hook → Urgency (Pain/Desire) → Legitimize the Source → Link with a Reason\n- E.L.I.T.E. embedded in the Legitimize step: Emotional Entry → Link to the Person (the solution) → Impact Moment → Their Credibility → Endorse with Personal Stake\n\nNEVER name Zinzino, BalanceTest, or BalanceOil in any post. Use \"test\" and \"product\" only.\nDay 3 post ends with: drop \"RESET\" to find out where your body is really at, or \"STORY\" to hear more.\n\n---\n\nYOUR PERSONALITY\n- Warm and genuinely curious — you actually care about the rep's story\n- Sharp — you notice what is real and push past the surface\n- Provocative when needed — you ask the question they didn't expect\n- Never clinical or scripted-sounding — this is a real conversation\n- Short Telegram-friendly messages. One idea per message. Never dump a wall of text.\n- Human, casual, warm\n\n---\n\nCONVERSATION FLOW — follow this exactly. One message at a time. Wait for their answer.\n\nSTEP 0 — WELCOME (triggered when you see \"START_STORY_SESSION\")\nSend a warm, brief welcome. 3–4 sentences max. Tell them you'll ask a few questions to pull out their story. By the end they'll have a complete content pack ready to post. Ask them to be honest and specific — the more real, the better the post.\n\nSTEP 1 — RESULTS CHECK\nOne question: Have they already noticed a difference since starting Zinzino, or are they completely new and just getting started?\n- If HAVE RESULTS → Track A\n- If NEW → Track B\nRemember this. It affects everything.\n\nSTEP 2 — AUDIENCE DISCOVERY\nAsk: \"Who are you hoping reads this when you post — paint me a picture. Who's the person you most want to help?\"\nMap their answer to one of three groups (don't show them this list):\n- Group 1: High-performing stressed professionals 35–55 — burnout, brain fog, running on empty despite doing \"everything right\"\n- Group 2: Active & health-conscious 35–60 — joint pain, slow recovery, inflammation, fit but not recovering well\n- Group 3: Long-term health focus 50+ — heart health, memory, energy, prevention, aging well\nRemember which group.\n\nSTEP 3 — CORE STRUGGLE\nAsk about their main challenge. Push for specifics. \"What did that look like on a normal day? What were you doing — or not doing — because of it?\"\nCapture: specific symptom, how it showed up in daily life, emotional cost.\n\nSTEP 4 — TIMELINE & FAILED ATTEMPTS\nHow long did this go on? What had they already tried that didn't fix it? This is the contrast — the \"I did everything right and it still didn't work\" moment.\n\nSTEP 5 — THE TURNING POINT\nHow did they find out about Zinzino/the test? Were they skeptical? Skepticism is gold — use it.\n\nSTEP 6A — TRACK A: TRANSFORMATION\n\"Give me one specific moment when you thought — ok, something is actually different now.\"\nPush for a scene, not a summary. What can they DO now they couldn't before?\n\nSTEP 6B — TRACK B: DECISION & EXCITEMENT\nWhy did they go all in? What are they most excited about? Any early signs even if small?\n\nSTEP 7 — TONE CHECK\n\"When you post on Facebook — are you more of a quiet, private sharer, or do you go emotional and open? Give me a word or two.\"\nOptions: vulnerable / direct / warm / funny / reserved / passionate / professional\n\nSTEP 8 — AUDIENCE SOFT CONFIRMATION\n\"So you're mainly speaking to [brief description of group you identified] — does that sound right?\"\nAdjust if needed.\n\n---\n\nWRITING THE CONTENT PACK\n\nOnce you have all answers, say: \"I have everything I need. Sit tight while I put your content pack together. 🚀\"\n\nThen write all 3 pieces. Separate them clearly.\n\n---\n\nDAY 3 — THE STORY POST\n\nOpening (pick based on their tone):\n- Vulnerable: \"Alright my friends, it's time… we need to talk about something super personal.\"\n- Direct: \"Ok friends, I've been promising I have something to share. Here goes…\"\n- Warm: \"I've been sitting on this for a while. But it's time.\"\n\nHook (1–2 sentences — challenge a conventional belief, use their situation):\nExamples:\n- \"I used to think [problem] was just [excuse they told themselves]. Turns out, it wasn't.\"\n- \"I struggled with [symptom] for [time], thinking it was just [aging/being busy]. I was wrong.\"\n- \"It turns out [what they tried before] doesn't actually fix the real problem. I learned this the hard way.\"\n\nStruggle section (3–5 short punchy lines, not paragraphs):\n\"For [time], I was [doing something healthy] — and still [symptom].\n[Symptom].\n[Symptom].\nI told myself it was [their excuse]. But deep down I knew that wasn't the whole truth.\"\n\nTurning point (E.L.I.T.E. embedded — the solution enters as their answer):\nTheir discovery story. If they were skeptical, lean into it.\n\nTRACK A — Transformation:\n\"Since then [specific change]. [Another change]. I'm [doing something now they couldn't before].\"\n\nTRACK B — Decision + Excitement:\n\"I did my research. I did the test. And I decided to go all in. Because [their core reason].\nEven in [short time], I'm already [any early sign].\"\n\nCTA (always end with this):\n\"If any of this sounds familiar — I'd love to hear from you.\nDrop RESET in the comments if you want to find out where your body is actually at.\nOr drop STORY if you just want to know more about what I'm doing and why.\"\n\nQUALITY RULES:\n1. Never name Zinzino, BalanceOil, BalanceTest\n2. No generic clichés — \"changed my life\", \"game changer\", \"never looked back\"\n3. Every line must be specific to THEIR story — if it could belong to anyone, rewrite it\n4. Match their tone — reserved means no tearjerker\n5. Short lines, white space, mobile-friendly\n6. 5th grade reading level\n7. 200–350 words maximum\n\n---\n\nDAY 5 — FB LIVE BULLET OUTLINE\n\nWrite 5–7 bullet points the rep can read from during their FB Live. They should:\n- Start with: \"Thank you for following along — I wanted to come on live and share a bit more...\"\n- Retell the core story in spoken form (brief, conversational)\n- Add one insight: explain why the TEST matters — it shows what's happening at the cellular level, why they were struggling even when doing everything right\n- NOT mention Zinzino, BalanceOil, or BalanceTest by name\n- End with an invitation: \"If any of this resonates, DM me or drop a word in the comments and I'll reach out\"\n\nFormat as a simple numbered list. Label it clearly as \"Day 5 — FB Live Outline 🎥\"\n\n---\n\nDAY 6 — SELF-EVALUATION POST\n\nWrite one of these two versions based on their TRACK:\n\nTRACK B (new — no results yet):\nOpening: \"I just evaluated my [their main struggle theme] choices over the past [X] years of my life — and on a scale from 1 to 10, I'm a [honest low number, 4–6].\"\nThen: honest admission, what they knew they were struggling with, what they decided to do and why, what they're committing to, their target score in 6 months\nCTA: \"Tell me in the comments what number you'd give yourself (1–10), or message me privately if you want some support. And let me know if you'd like to join me on this — I could use the accountability.\"\n\nTRACK A (has results):\nOpening: \"I'm at a [high number, 8–9] now — and I'm not stopping.\"\nThen: where they started (the honest low number), what they were struggling with, what they did about it, the transformation, where they are now\nCTA: \"Drop your number (1–10) in the comments, or send me a private message if you want to take the first step. I'm happy to share exactly what helped me.\"\n\nMatch their tone. 150–250 words. No brand names.\n\n---\n\nDELIVERY FORMAT\n\nWhen you are ready to deliver the content pack, format it EXACTLY like this:\n\n---\n🎉 *Your RepFlowAI Content Pack is ready!*\n\nHere are your 3 posts for launch week. Save them all — you'll need them on the right days.\n\n---\n📝 *DAY 3 — YOUR STORY POST*\n*(Post this on Day 3 of your launch week — with a personal photo)*\n\n[Day 3 post here]\n\n---\n🎥 *DAY 5 — FB LIVE OUTLINE*\n*(Go live on Day 5 — use these bullet points as your guide)*\n\n[Day 5 outline here]\n\n---\n📊 *DAY 6 — SELF-EVALUATION POST*\n*(Post this on Day 6 — with a personal photo)*\n\n[Day 6 post here]\n\n---\n💬 *Read through all three. Do they sound like you?*\n*If anything feels off, tell me what and I'll fix it.*\n*And remember — Days 1, 2, and 4 use fixed text I'll send you separately.*\n\n[POST_READY]\n\n---\n\nCRITICAL: The tag [POST_READY] must appear on its own line at the very end of your response when you deliver the content pack. This is a system signal — do not explain it or refer to it. It must appear exactly as shown.\n\nIMPORTANT RULES:\n- Never rush. One question at a time. Wait for their answer.\n- Never put words in their mouth — extract, don't invent.\n- If they give a vague emotional answer, gently probe: \"Tell me more about that.\"\n- Keep each Telegram message 3–4 sentences maximum.\n- If something they say is powerful, mirror it briefly: \"That's such a real moment. I'm going to make sure we capture that.\""
+            },
+            {
+              "name": "messages",
+              "value": "={{ $json.messages }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000011",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2320, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const claudeResponse = $('Call Claude').item.json;\nconst buildData = $('Build Messages').item.json;\n\n// Extract text from Claude response\nlet claudeText = '';\nif (claudeResponse.content && claudeResponse.content.length > 0) {\n  claudeText = claudeResponse.content\n    .filter(block => block.type === 'text')\n    .map(block => block.text)\n    .join('');\n}\n\n// Check for [POST_READY] signal\nconst isComplete = claudeText.includes('[POST_READY]');\n\n// Clean the text to send to user (remove the tag)\nconst cleanText = claudeText.replace('[POST_READY]', '').trim();\n\n// Build updated messages array (append Claude's response)\nconst updatedMessages = [...buildData.messages, {\n  role: 'assistant',\n  content: claudeText  // Store full text including tag in DB\n}];\n\n// Extract story content if complete (everything before [POST_READY])\nconst storyContent = isComplete ? cleanText : null;\n\nreturn [{json: {\n  claudeText: cleanText,\n  isComplete,\n  storyContent,\n  updatedMessages,\n  sessionId: buildData.sessionId,\n  repId: buildData.repId,\n  chatId: buildData.chatId,\n  telegramId: buildData.telegramId,\n  isNewSession: buildData.isNewSession\n}}];"
+      },
+      "id": "aa000001-0000-0000-0000-000000000012",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2540, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Parse Claude Response').item.json;\nconst method = data.isNewSession ? 'POST' : 'PATCH';\nconst url = data.isNewSession\n  ? 'YOUR_SUPABASE_URL/rest/v1/sessions'\n  : `YOUR_SUPABASE_URL/rest/v1/sessions?id=eq.${data.sessionId}`;\n\n// Build body based on method (PATCH omits rep_id and telegram_id)\nconst body = method === 'POST'\n  ? {\n      rep_id: data.repId,\n      telegram_id: data.telegramId,\n      messages: data.updatedMessages,\n      status: data.isComplete ? 'complete' : 'in_progress',\n      updated_at: new Date().toISOString()\n    }\n  : {\n      messages: data.updatedMessages,\n      status: data.isComplete ? 'complete' : 'in_progress',\n      updated_at: new Date().toISOString()\n    };\n\nreturn [{json: {\n  ...data,\n  supabaseMethod: method,\n  supabaseUrl: url,\n  sessionBody: body\n}}];"
+      },
+      "id": "aa000001-0000-0000-0000-000000000013",
+      "name": "Prep Upsert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2760, 380]
+    },
+    {
+      "parameters": {
+        "method": "={{ $json.supabaseMethod }}",
+        "url": "={{ $json.supabaseUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.sessionBody) }}",
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000014",
+      "name": "Upsert Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2980, 380]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse Claude Response').item.json.chatId }}",
+        "text": "={{ $('Parse Claude Response').item.json.claudeText }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "aa000001-0000-0000-0000-000000000015",
+      "name": "Send Telegram Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [3200, 380],
+      "credentials": {
+        "telegramApi": {
+          "id": "1",
+          "name": "Telegram API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-is-complete",
+              "leftValue": "={{ $('Parse Claude Response').item.json.isComplete }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000016",
+      "name": "Is Complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3420, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_SUPABASE_URL/rest/v1/stories",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "rep_id",
+              "value": "={{ $('Parse Claude Response').item.json.repId }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('Parse Claude Response').item.json.storyContent }}"
+            },
+            {
+              "name": "tone",
+              "value": "auto-detected"
+            },
+            {
+              "name": "audience",
+              "value": "auto-detected"
+            },
+            {
+              "name": "track",
+              "value": "auto-detected"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000017",
+      "name": "Save Story",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3640, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_SUPABASE_URL/rest/v1/rpc/decrement_rep_credits",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "p_telegram_id",
+              "value": "={{ $('Parse Claude Response').item.json.telegramId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000018",
+      "name": "Deduct Credits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3640, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "YOUR_SUPABASE_URL/rest/v1/usage_logs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_SUPABASE_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "rep_id",
+              "value": "={{ $('Parse Claude Response').item.json.repId }}"
+            },
+            {
+              "name": "action",
+              "value": "story_generated"
+            },
+            {
+              "name": "credits_used",
+              "value": "=1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa000001-0000-0000-0000-000000000019",
+      "name": "Log Usage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3640, 580]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Active Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Active Session": {
+      "main": [
+        [
+          {
+            "node": "Route Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Logic": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Build Messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Rep",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Check Rep": {
+      "main": [
+        [
+          {
+            "node": "Validate Rep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Rep": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Build Messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Messages": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Prep Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Upsert": {
+      "main": [
+        [
+          {
+            "node": "Upsert Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Session": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Message": {
+      "main": [
+        [
+          {
+            "node": "Is Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Complete?": {
+      "main": [
+        [
+          {
+            "node": "Save Story",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Deduct Credits",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Usage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "story-architect-workflow-v1"
+  },
+  "id": "StoryArchitectBot",
+  "tags": [
+    {
+      "createdAt": "2026-03-24T00:00:00.000Z",
+      "updatedAt": "2026-03-24T00:00:00.000Z",
+      "id": "1",
+      "name": "repflowai"
+    }
+  ]
+}

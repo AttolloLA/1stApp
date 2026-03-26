@@ -315,8 +315,103 @@
       min-height: 48px;
     }
 
-    /* Completed task fades to 50% — still visible, not distracting */
-    .intention-item.done { opacity: 0.45; }
+    /* ── Fade-out animation: item shrinks away before being removed ── */
+    @keyframes taskFadeOut {
+      0%   { opacity: 1;    transform: translateX(0);     max-height: 56px; }
+      60%  { opacity: 0;    transform: translateX(12px);  max-height: 56px; }
+      100% { opacity: 0;    transform: translateX(12px);  max-height: 0;    padding: 0; margin: 0; }
+    }
+
+    /* Applied in JS right after checkbox is checked */
+    .intention-item.completing {
+      overflow: hidden;
+      animation: taskFadeOut 1s ease forwards;
+      pointer-events: none; /* prevent double-click during animation */
+    }
+
+    /* ── Archive toggle button — discrete link style ── */
+    .archive-footer {
+      display: flex;
+      justify-content: center;
+      padding-top: 10px;
+      margin-top: 4px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .archive-toggle-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color 0.2s, background 0.2s;
+    }
+    .archive-toggle-btn:hover { color: var(--sales); background: rgba(232,168,56,0.07); }
+    .archive-toggle-btn .archive-eye { font-size: 0.85rem; }
+
+    /* ── Archive section — hidden by default, slides open ── */
+    .archive-section {
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height 0.45s ease, opacity 0.35s ease;
+      opacity: 0;
+    }
+    .archive-section.open {
+      max-height: 600px; /* large enough for any list */
+      opacity: 1;
+    }
+
+    .archive-list {
+      padding-top: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* Each completed item in the archive */
+    .archive-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 4px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      opacity: 0.5;
+    }
+    .archive-item-check {
+      font-size: 0.8rem;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+    .archive-item-text {
+      flex: 1;
+      font-size: 0.88rem;
+      font-weight: 300;
+      color: var(--text);
+      text-decoration: line-through;
+      text-decoration-color: rgba(255,255,255,0.2);
+    }
+    .archive-item-time {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      flex-shrink: 0;
+    }
+
+    .archive-empty {
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+      padding: 14px 0 6px;
+      font-style: italic;
+    }
 
     .intention-item input[type="checkbox"] {
       appearance: none;
@@ -1071,6 +1166,19 @@
   <div class="card" id="intentions-card">
     <h2>Daily Intentions</h2>
     <div class="intentions-list" id="intentions"></div>
+
+    <!-- Archive toggle button (discrete, appears under the task list) -->
+    <div class="archive-footer">
+      <button id="archive-toggle" class="archive-toggle-btn">
+        <span class="archive-eye">◎</span> View Completed
+      </button>
+    </div>
+
+    <!-- Hidden archive — slides open when toggle is clicked -->
+    <div class="archive-section" id="archive-section">
+      <div class="archive-list" id="archive-list"></div>
+      <p class="archive-empty" id="archive-empty" style="display:none">Nothing completed yet today.</p>
+    </div>
   </div>
 
   <!-- ── Revenue Tracker ── -->
@@ -1213,12 +1321,17 @@
     updateClock();
 
     // ════════════════════════════════════════════════════════
-    // DAILY INTENTIONS  — dynamic list, LocalStorage
-    // Stored as: 'tasks' → JSON array of { id, text, done }
+    // DAILY INTENTIONS v2 — auto-hide on complete, archive
+    // Active tasks:    localStorage 'tasks'          → [{ id, text, done }]
+    // Completed tasks: localStorage 'completedTasks' → [{ id, text, completedAt }]
     // ════════════════════════════════════════════════════════
-    const taskList = document.getElementById('intentions');
+    const taskList      = document.getElementById('intentions');
+    const archiveList   = document.getElementById('archive-list');
+    const archiveEmpty  = document.getElementById('archive-empty');
+    const archiveSection = document.getElementById('archive-section');
+    const archiveToggle  = document.getElementById('archive-toggle');
 
-    // Load / save helpers
+    // ── Active tasks helpers ──
     function loadTasks() {
       return JSON.parse(localStorage.getItem('tasks') || '[]');
     }
@@ -1226,20 +1339,53 @@
       localStorage.setItem('tasks', JSON.stringify(tasks));
     }
 
-    // Build one task row and attach all events
-    function createTaskRow(task, tasks) {
+    // ── Completed tasks helpers ──
+    function loadCompleted() {
+      return JSON.parse(localStorage.getItem('completedTasks') || '[]');
+    }
+    function saveCompleted(list) {
+      localStorage.setItem('completedTasks', JSON.stringify(list));
+    }
+
+    // Build one active task row and attach all events
+    function createTaskRow(task) {
       const item = document.createElement('div');
-      item.className = 'intention-item' + (task.done ? ' done' : '');
+      item.className = 'intention-item';
       item.dataset.id = task.id;
 
       // ── Checkbox ──
       const cb = document.createElement('input');
       cb.type    = 'checkbox';
-      cb.checked = task.done;
+      cb.checked = false; // active tasks are always unchecked on render
+
       cb.addEventListener('change', () => {
-        task.done = cb.checked;
-        item.classList.toggle('done', cb.checked);
-        saveTasks(loadTasks().map(t => t.id === task.id ? { ...t, done: cb.checked } : t));
+        if (!cb.checked) return; // only act on check, not uncheck
+
+        // 1. Trigger the CSS fade-out animation
+        item.classList.add('completing');
+
+        // 2. After 1 second: move task from active → archive
+        setTimeout(() => {
+          // Remove from active storage
+          const remaining = loadTasks().filter(t => t.id !== task.id);
+          if (remaining.length === 0) {
+            remaining.push({ id: Date.now().toString(), text: '', done: false });
+          }
+          saveTasks(remaining);
+
+          // Push to completed storage with a timestamp
+          const completed = loadCompleted();
+          completed.push({
+            id:          task.id,
+            text:        task.text,
+            completedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          });
+          saveCompleted(completed);
+
+          // Re-render both lists
+          renderTasks();
+          renderArchive();
+        }, 1000);
       });
 
       // ── Text input ──
@@ -1251,9 +1397,10 @@
       // Save on every keystroke
       input.addEventListener('input', () => {
         saveTasks(loadTasks().map(t => t.id === task.id ? { ...t, text: input.value } : t));
+        task.text = input.value; // keep local ref in sync for archive
       });
 
-      // Enter key → append a fresh empty task below this one, focus it
+      // Enter key → append a fresh empty task below, focus it
       input.addEventListener('keydown', e => {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -1263,10 +1410,8 @@
         all.splice(idx + 1, 0, newTask);
         saveTasks(all);
         renderTasks();
-        // Focus the newly created row's input
         const rows = taskList.querySelectorAll('.intention-item');
-        const newInput = rows[idx + 1]?.querySelector('input[type="text"]');
-        newInput?.focus();
+        rows[idx + 1]?.querySelector('input[type="text"]')?.focus();
       });
 
       // ── Delete button ──
@@ -1276,7 +1421,6 @@
       del.title       = 'Remove';
       del.addEventListener('click', () => {
         const updated = loadTasks().filter(t => t.id !== task.id);
-        // Always keep at least one row
         if (updated.length === 0) updated.push({ id: Date.now().toString(), text: '', done: false });
         saveTasks(updated);
         renderTasks();
@@ -1286,18 +1430,57 @@
       return item;
     }
 
-    // Re-render the full list from storage
+    // Re-render the active task list (only shows done:false tasks)
     function renderTasks() {
-      let tasks = loadTasks();
-      // Bootstrap: first run gets one blank task
+      let tasks = loadTasks().filter(t => !t.done);
       if (tasks.length === 0) {
         tasks = [{ id: Date.now().toString(), text: '', done: false }];
         saveTasks(tasks);
       }
       taskList.innerHTML = '';
-      tasks.forEach(task => taskList.appendChild(createTaskRow(task, tasks)));
+      tasks.forEach(task => taskList.appendChild(createTaskRow(task)));
     }
 
+    // Render the archive of completed tasks
+    function renderArchive() {
+      const completed = loadCompleted();
+      archiveList.innerHTML = '';
+
+      if (completed.length === 0) {
+        archiveEmpty.style.display = 'block';
+        return;
+      }
+
+      archiveEmpty.style.display = 'none';
+      completed.forEach(t => {
+        const row = document.createElement('div');
+        row.className = 'archive-item';
+
+        const check = document.createElement('span');
+        check.className   = 'archive-item-check';
+        check.textContent = '✓';
+
+        const text = document.createElement('span');
+        text.className   = 'archive-item-text';
+        text.textContent = t.text || '(untitled)';
+
+        const time = document.createElement('span');
+        time.className   = 'archive-item-time';
+        time.textContent = t.completedAt;
+
+        row.append(check, text, time);
+        archiveList.appendChild(row);
+      });
+    }
+
+    // ── Archive toggle: slide open/closed ──
+    archiveToggle.addEventListener('click', () => {
+      const isOpen = archiveSection.classList.toggle('open');
+      archiveToggle.querySelector('.archive-eye').textContent = isOpen ? '◉' : '◎';
+      if (isOpen) renderArchive(); // refresh list each time it opens
+    });
+
+    // Initial render
     renderTasks();
 
     // ════════════════════════════════════════════════════════
