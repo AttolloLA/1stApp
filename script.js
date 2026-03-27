@@ -53,6 +53,13 @@ let unsubTasks     = null;
 let unsubCompleted = null;
 let unsubWins      = null;
 
+// ── 7-Day Momentum Chart ──────────────────────────────────
+// Chart.js instance (destroyed on sign-out, re-created on sign-in)
+let momentumChart  = null;
+// Cached Firestore docs used to build chart data
+let allCompletedDocs = []; // users/{uid}/completedTasks
+let allWinsDocs      = []; // users/{uid}/wins
+
 // ════════════════════════════════════════════════════════
 // CLOCK & DATE — no auth required, starts immediately
 // ════════════════════════════════════════════════════════
@@ -104,8 +111,9 @@ function createTaskRow(task) {
     setTimeout(async () => {
       await deleteDoc(doc(tasksRef, task.id));
       await addDoc(completedRef, {
-        text:        task.text,
-        completedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        text:          task.text,
+        completedDate: new Date().toISOString().split('T')[0], // 'YYYY-MM-DD' for 7-day chart
+        completedAt:   new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       });
       if (archiveSection.classList.contains('open')) renderArchive();
     }, 1000);
@@ -200,6 +208,114 @@ archiveToggle.addEventListener('click', () => {
   archiveToggle.querySelector('.archive-eye').textContent = isOpen ? '◉' : '◎';
   if (isOpen) renderArchive();
 });
+
+// ════════════════════════════════════════════════════════
+// 7-DAY MOMENTUM CHART — "The Pulse"
+// Combines completed intentions + logged wins per day.
+// ════════════════════════════════════════════════════════
+
+// Build labels (day names) and scores for the last 7 days
+function buildChartData() {
+  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const labels   = [];
+  const dateKeys = []; // 'YYYY-MM-DD' strings for the last 7 days
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    labels.push(dayNames[d.getDay()]);
+    dateKeys.push(d.toISOString().split('T')[0]);
+  }
+
+  // Count completed tasks + wins for each of the 7 days
+  const data = dateKeys.map(key => {
+    const completedCount = allCompletedDocs.filter(t => t.completedDate === key).length;
+    const winsCount      = allWinsDocs.filter(w => w.timestamp?.startsWith(key)).length;
+    return completedCount + winsCount;
+  });
+
+  return { labels, data };
+}
+
+// Create the Chart.js line chart (called once after login)
+function initMomentumChart() {
+  const canvas = document.getElementById('momentumChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Gold gradient fill — fades from semi-opaque at top to transparent at bottom
+  const gradient = ctx.createLinearGradient(0, 0, 0, 170);
+  gradient.addColorStop(0, 'rgba(232, 168, 56, 0.32)');
+  gradient.addColorStop(1, 'rgba(232, 168, 56, 0.0)');
+
+  const { labels, data } = buildChartData();
+
+  momentumChart = new Chart(ctx, {  // Chart is a global from the CDN script
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Momentum',
+        data,
+        borderColor: '#e8a838',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#e8a838',
+        pointBorderColor: 'transparent',
+        pointRadius: 4,
+        pointHoverRadius: 7,
+        fill: true,
+        backgroundColor: gradient,
+        tension: 0.4  // smooth bezier curves
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: 'rgba(10, 14, 26, 0.92)',
+          titleColor: '#e8a838',
+          bodyColor: '#e8e8e8',
+          borderColor: 'rgba(232, 168, 56, 0.3)',
+          borderWidth: 1,
+          padding: 10,
+          callbacks: {
+            label: ctx => ` ${ctx.parsed.y} action${ctx.parsed.y !== 1 ? 's' : ''}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid:   { display: false },
+          border: { display: false },
+          ticks:  { color: '#5a6070', font: { size: 11 } }
+        },
+        y: {
+          grid:        { display: false },
+          border:      { display: false },
+          beginAtZero: true,
+          ticks: {
+            color: '#5a6070',
+            font:  { size: 11 },
+            stepSize: 1,
+            // Don't show decimals on the Y axis
+            callback: val => Number.isInteger(val) ? val : null
+          }
+        }
+      }
+    }
+  });
+}
+
+// Push fresh data into the existing chart instance (called by every onSnapshot)
+function updateMomentumChart() {
+  if (!momentumChart) return;
+  const { labels, data } = buildChartData();
+  momentumChart.data.labels              = labels;
+  momentumChart.data.datasets[0].data   = data;
+  momentumChart.update('active'); // 'active' uses the smooth animation preset
+}
 
 // ════════════════════════════════════════════════════════
 // QUOTES — 10 Stoic + 10 Sales/Mindset — no auth required
@@ -481,14 +597,23 @@ function startFirestoreListeners(user) {
     renderTasksFromSnapshot
   );
 
-  // Completed tasks — update cache, refresh archive panel if open
+  // Completed tasks — update cache, refresh archive + chart
   unsubCompleted = onSnapshot(completedRef, snapshot => {
-    latestCompletedDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    allCompletedDocs    = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    latestCompletedDocs = allCompletedDocs; // archive panel uses this alias
     if (archiveSection.classList.contains('open')) renderArchive();
+    updateMomentumChart(); // re-draw the line when a task is completed
   });
 
-  // Hall of Fame wins — real-time sync across all devices
-  unsubWins = onSnapshot(winsRef, renderWinsFromSnapshot);
+  // Hall of Fame wins — real-time sync + chart update
+  unsubWins = onSnapshot(winsRef, snapshot => {
+    allWinsDocs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderWinsFromSnapshot(snapshot);
+    updateMomentumChart(); // re-draw the line when a win is logged
+  });
+
+  // Build the chart now that refs are ready (data arrives via onSnapshot above)
+  initMomentumChart();
 }
 
 // Stop all listeners and clear the UI when the user signs out
@@ -501,6 +626,9 @@ function stopFirestoreListeners() {
   document.getElementById('wins-list').innerHTML = '';
   archiveListEl.innerHTML = '';
   liveTasks = []; latestCompletedDocs = [];
+  // Clear chart caches and destroy the Chart.js instance
+  allCompletedDocs = []; allWinsDocs = [];
+  if (momentumChart) { momentumChart.destroy(); momentumChart = null; }
   // Reset refs so no stale writes can happen
   tasksRef = null; completedRef = null; winsRef = null;
 }

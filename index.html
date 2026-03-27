@@ -17,6 +17,9 @@
   <!-- All JavaScript lives in script.js — loaded as an ES module so Firebase imports work -->
   <script type="module" src="script.js"></script>
 
+  <!-- Chart.js — loaded as a classic script so Chart is a global variable -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
   <!-- Fonts: Inter for the clock / UI, Playfair Display for quotes -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400&family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&display=swap" rel="stylesheet" />
@@ -635,6 +638,30 @@
       text-align: center;
       padding: 16px 0;
       font-style: italic;
+    }
+
+    /* ════════════════════════════════════════════════════════
+       7-DAY MOMENTUM CHART — The Pulse
+    ════════════════════════════════════════════════════════ */
+    .pulse-card {
+      border-color: rgba(232, 168, 56, 0.25);
+    }
+
+    .pulse-card h2 {
+      color: var(--sales);
+    }
+
+    .pulse-subtitle {
+      font-size: 0.72rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      margin: -6px 0 20px;
+    }
+
+    /* Fixed-height wrapper so Chart.js respects maintainAspectRatio: false */
+    .pulse-chart-wrap {
+      position: relative;
+      height: 170px;
     }
 
     /* ════════════════════════════════════════════════════════
@@ -1420,6 +1447,15 @@
     <button id="log-win-btn">⚡ Log Win</button>
     <div class="wins-list" id="wins-list">
       <!-- Wins injected by JS -->
+    </div>
+  </div>
+
+  <!-- ── 7-Day Momentum Chart — The Pulse ── -->
+  <div class="card pulse-card">
+    <h2>7-Day Momentum</h2>
+    <p class="pulse-subtitle">Intentions completed + Wins logged</p>
+    <div class="pulse-chart-wrap">
+      <canvas id="momentumChart"></canvas>
     </div>
   </div>
 
