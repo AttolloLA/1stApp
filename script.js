@@ -164,7 +164,8 @@ function createTaskRow(task) {
   return item;
 }
 
-// Called by onSnapshot every time 'tasks' changes on ANY device
+// Called by onSnapshot every time 'tasks' changes on ANY device.
+// Uses DOM diffing instead of innerHTML = '' so typing is never interrupted.
 function renderTasksFromSnapshot(snapshot) {
   liveTasks = snapshot.docs
     .map(d => ({ id: d.id, ...d.data() }))
@@ -176,8 +177,29 @@ function renderTasksFromSnapshot(snapshot) {
     return; // onSnapshot will fire again with the new doc
   }
 
-  taskList.innerHTML = '';
-  liveTasks.forEach(task => taskList.appendChild(createTaskRow(task)));
+  const incomingIds = new Set(liveTasks.map(t => t.id));
+
+  // Remove rows that were deleted in Firestore
+  [...taskList.querySelectorAll('.intention-item')].forEach(el => {
+    if (!incomingIds.has(el.dataset.id)) el.remove();
+  });
+
+  // Insert new rows and re-order existing ones — never wiping the DOM
+  liveTasks.forEach(task => {
+    let row = taskList.querySelector(`[data-id="${task.id}"]`);
+    if (!row) {
+      // Brand-new task — create a fresh row
+      row = createTaskRow(task);
+    } else {
+      // Existing row — only update text if the user isn't currently typing in it
+      const input = row.querySelector('input[type="text"]');
+      if (input && document.activeElement !== input) {
+        input.value = task.text;
+      }
+    }
+    // appendChild moves the element to the correct sorted position without cloning it
+    taskList.appendChild(row);
+  });
 }
 
 // Render completed tasks archive from our local cache
