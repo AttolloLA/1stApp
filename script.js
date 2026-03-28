@@ -185,7 +185,7 @@ function renderTasksFromSnapshot(snapshot) {
   });
 
   // Insert new rows and re-order existing ones — never wiping the DOM
-  liveTasks.forEach(task => {
+  liveTasks.forEach((task, index) => {
     let row = taskList.querySelector(`[data-id="${task.id}"]`);
     if (!row) {
       // Brand-new task — create a fresh row
@@ -197,8 +197,13 @@ function renderTasksFromSnapshot(snapshot) {
         input.value = task.text;
       }
     }
-    // appendChild moves the element to the correct sorted position without cloning it
-    taskList.appendChild(row);
+    // Only move the element if it isn't already in the correct position.
+    // Unconditionally calling appendChild on a focused input — even within
+    // the same parent — causes the browser to interrupt typing and scroll
+    // the page (the spacebar-to-bottom bug).
+    if (taskList.children[index] !== row) {
+      taskList.insertBefore(row, taskList.children[index] || null);
+    }
   });
 }
 
